@@ -1,0 +1,2 @@
+simpy>=3.0.8
+bitstring>=3.1.3
