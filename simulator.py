@@ -5,6 +5,7 @@ The simulator aims to model users joining, leaving and using the system.
 
 import simpy
 import random
+import numpy
 
 SIMULATION_ROUNDS = 361
 SIMULATION_ITERATIONS = 10
@@ -87,7 +88,7 @@ class User(object):
 
 
 def run(stdout=False):
-    """Main simulation loop."""
+    """Main simulation control loop."""
     env = simpy.Environment()
     env.active_users = set([User(env) for i in range(INITIAL_USERS)])
     env.inactive_users = set([])
@@ -143,7 +144,6 @@ def run(stdout=False):
     return results
 
 res = {}
-avg = {}
 for i in range(SIMULATION_ITERATIONS):
     res[i] = run()
 
@@ -154,3 +154,55 @@ for i in range(SIMULATION_ITERATIONS):
             res[i][k]["users_inactive"], res[i][k]["shares"], \
             res[i][k]["share_ops"], res[i][k]["share_noretr"], \
             res[i][k]["friends"], res[i][k]["friends_inactive"]
+
+print "round user_avg user_stddev user_min user_max " + \
+    "active_user_avg active_user_stddev active_user_min active_user_max " + \
+    "inactive_user_avg inactive_user_stddev inactive_user_min inactive_user_max " + \
+    "share_avg shares_stddev shares_min shares_max " + \
+    "shareops_avg shareops_stddev shareops_min shareops_max " + \
+    "sharenoretr_avg sharenoretr_stddev sharenoretr_min sharenoretr_max " + \
+    "friends_avg friends_stddev friends_min friends_max " + \
+    "finactive_avg finactive_stddev finactive_min finactive_max"
+
+for k in sorted(res[0].keys()):
+    users = [res[i][k]["users"] for i in range(SIMULATION_ITERATIONS)]
+    uactive = [res[i][k]["users_active"] for i in range(SIMULATION_ITERATIONS)]
+    uinactive = [res[i][k]["users_inactive"] for i in range(SIMULATION_ITERATIONS)]
+    shares = [res[i][k]["shares"] for i in range(SIMULATION_ITERATIONS)]
+    shareops = [res[i][k]["share_ops"] for i in range(SIMULATION_ITERATIONS)]
+    share_noretr = [res[i][k]["share_noretr"] for i in range(SIMULATION_ITERATIONS)]
+    friends = [res[i][k]["friends"] for i in range(SIMULATION_ITERATIONS)]
+    finactive = [res[i][k]["friends_inactive"] for i in range(SIMULATION_ITERATIONS)]
+    print k, \
+        numpy.average(users),\
+        numpy.std(users),\
+        numpy.min(users),\
+        numpy.max(users),\
+        numpy.average(uactive),\
+        numpy.std(uactive),\
+        numpy.min(uactive),\
+        numpy.max(uactive),\
+        numpy.average(uinactive),\
+        numpy.std(uinactive),\
+        numpy.min(uinactive),\
+        numpy.max(uinactive),\
+        numpy.average(shares),\
+        numpy.std(shares),\
+        numpy.min(shares),\
+        numpy.max(shares),\
+        numpy.average(shareops),\
+        numpy.std(shareops),\
+        numpy.min(shareops),\
+        numpy.max(shareops),\
+        numpy.average(share_noretr),\
+        numpy.std(share_noretr),\
+        numpy.min(share_noretr),\
+        numpy.max(share_noretr),\
+        numpy.average(friends),\
+        numpy.std(friends),\
+        numpy.min(friends),\
+        numpy.max(friends),\
+        numpy.average(finactive),\
+        numpy.std(finactive),\
+        numpy.min(finactive),\
+        numpy.max(finactive)
