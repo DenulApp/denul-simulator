@@ -10,7 +10,7 @@ from progressbar import ProgressBar, Percentage, Bar, ETA
 from multiprocessing import Pool, cpu_count
 
 SIMULATION_ROUNDS = 361
-SIMULATION_ITERATIONS = 100
+SIMULATION_ITERATIONS = 10
 INITIAL_USERS = 100
 
 
@@ -89,7 +89,7 @@ class User(object):
             self.env.active_users.remove(self)
 
 
-def run(iteration, stdout=False):
+def run(iteration):
     """Main simulation control loop."""
     env = simpy.Environment()
     env.active_users = set([User(env) for i in range(INITIAL_USERS)])
@@ -117,103 +117,109 @@ def run(iteration, stdout=False):
                     friends += len(user.friends)
                     nodownload = nodownload + user.shares - user.shares_downloaded
                     inac_friends += len(user.friends & env.inactive_users)
-                # Print stats
-                if stdout:
-                    print "Step", env.now + 1
-                    print "  Users:      ", active + inactive
-                    print "    Active:   ", active
-                    print "    Inactive: ", inactive
-                    print "  Shares:     ", shares
-                    print "    Share ops:", share_ops
-                    print "    Not retr: ", nodownload
-                    print "  Friends:    ", friends
-                    print "    Inactive: ", inac_friends
-                else:
-                    results[env.now + 1] = {
-                        "users": active + inactive,
-                        "users_active": active,
-                        "users_inactive": inactive,
-                        "shares": shares,
-                        "share_ops": share_ops,
-                        "share_noretr": nodownload,
-                        "friends": friends,
-                        "friends_inactive": inac_friends
-                    }
+                # Add result to return value
+                results[env.now + 1] = {
+                    "users": active + inactive,
+                    "users_active": active,
+                    "users_inactive": inactive,
+                    "shares": shares,
+                    "share_ops": share_ops,
+                    "share_noretr": nodownload,
+                    "friends": friends,
+                    "friends_inactive": inac_friends
+                }
         env.step()
         if last:
             # Add new users to the system
             env.active_users.update([User(env) for i in range(random.randrange(0, 5, 1))])
     return results
 
+# Result dictionary
 res = {}
+
+# Prepare ProgressBar
 widgets = [Percentage(), Bar(marker='=', left='[', right=']'),
            ' ', ETA()]
 pbar = ProgressBar(widgets=widgets)
+
+# Prepare multiprocessing Pool
 try:
     pool = Pool(processes=cpu_count())
 except NotImplementedError:
     print "Could not determine CPU count, using 4"
     pool = Pool(processes=4)
+
+# Multiprocess simulation
 resiter = pool.imap(run, range(SIMULATION_ITERATIONS))
+# Retrieve and save results
 for i in pbar(range(SIMULATION_ITERATIONS)):
     res[i] = resiter.next(timeout=60)
 
-print "iteration round users active inactive shares shareops nodownload friends inacfriends"
-for i in range(SIMULATION_ITERATIONS):
-    for k in sorted(res[i].keys()):
-        print i, k, res[i][k]["users"], res[i][k]["users_active"], \
-            res[i][k]["users_inactive"], res[i][k]["shares"], \
-            res[i][k]["share_ops"], res[i][k]["share_noretr"], \
-            res[i][k]["friends"], res[i][k]["friends_inactive"]
+# Print raw output data, as space-separated values
+with open('rounds.csv', 'w') as fo:
+    fo.write("iteration,round,users,active,inactive,shares,shareops,nodownload,friends,inacfriends\n")
+    for i in range(SIMULATION_ITERATIONS):
+        for k in sorted(res[i].keys()):
+            fo.write(str(i) + "," + str(k) + "," +
+                     str(res[i][k]["users"]) + "," +
+                     str(res[i][k]["users_active"]) + "," +
+                     str(res[i][k]["users_inactive"]) + "," +
+                     str(res[i][k]["shares"]) + "," +
+                     str(res[i][k]["share_ops"]) + "," +
+                     str(res[i][k]["share_noretr"]) + "," +
+                     str(res[i][k]["friends"]) + "," +
+                     str(res[i][k]["friends_inactive"]) + "\n")
 
-print "round user_avg user_stddev user_min user_max " + \
-    "active_user_avg active_user_stddev active_user_min active_user_max " + \
-    "inactive_user_avg inactive_user_stddev inactive_user_min inactive_user_max " + \
-    "share_avg shares_stddev shares_min shares_max " + \
-    "shareops_avg shareops_stddev shareops_min shareops_max " + \
-    "sharenoretr_avg sharenoretr_stddev sharenoretr_min sharenoretr_max " + \
-    "friends_avg friends_stddev friends_min friends_max " + \
-    "finactive_avg finactive_stddev finactive_min finactive_max"
+# Print aggregated statistics
+with open('results.csv', 'w') as fo:
+    fo.write("round,user_avg,user_stddev,user_min,user_max," +
+             "active_user_avg,active_user_stddev,active_user_min,active_user_max," +
+             "inactive_user_avg,inactive_user_stddev,inactive_user_min,inactive_user_max," +
+             "share_avg,shares_stddev,shares_min,shares_max," +
+             "shareops_avg,shareops_stddev,shareops_min,shareops_max," +
+             "sharenoretr_avg,sharenoretr_stddev,sharenoretr_min,sharenoretr_max," +
+             "friends_avg,friends_stddev,friends_min,friends_max," +
+             "finactive_avg,finactive_stddev,finactive_min,finactive_max\n")
 
-for k in sorted(res[0].keys()):
-    users = [res[i][k]["users"] for i in range(SIMULATION_ITERATIONS)]
-    uactive = [res[i][k]["users_active"] for i in range(SIMULATION_ITERATIONS)]
-    uinactive = [res[i][k]["users_inactive"] for i in range(SIMULATION_ITERATIONS)]
-    shares = [res[i][k]["shares"] for i in range(SIMULATION_ITERATIONS)]
-    shareops = [res[i][k]["share_ops"] for i in range(SIMULATION_ITERATIONS)]
-    share_noretr = [res[i][k]["share_noretr"] for i in range(SIMULATION_ITERATIONS)]
-    friends = [res[i][k]["friends"] for i in range(SIMULATION_ITERATIONS)]
-    finactive = [res[i][k]["friends_inactive"] for i in range(SIMULATION_ITERATIONS)]
-    print k, \
-        numpy.average(users),\
-        numpy.std(users),\
-        numpy.min(users),\
-        numpy.max(users),\
-        numpy.average(uactive),\
-        numpy.std(uactive),\
-        numpy.min(uactive),\
-        numpy.max(uactive),\
-        numpy.average(uinactive),\
-        numpy.std(uinactive),\
-        numpy.min(uinactive),\
-        numpy.max(uinactive),\
-        numpy.average(shares),\
-        numpy.std(shares),\
-        numpy.min(shares),\
-        numpy.max(shares),\
-        numpy.average(shareops),\
-        numpy.std(shareops),\
-        numpy.min(shareops),\
-        numpy.max(shareops),\
-        numpy.average(share_noretr),\
-        numpy.std(share_noretr),\
-        numpy.min(share_noretr),\
-        numpy.max(share_noretr),\
-        numpy.average(friends),\
-        numpy.std(friends),\
-        numpy.min(friends),\
-        numpy.max(friends),\
-        numpy.average(finactive),\
-        numpy.std(finactive),\
-        numpy.min(finactive),\
-        numpy.max(finactive)
+    for k in sorted(res[0].keys()):
+        users = [res[i][k]["users"] for i in range(SIMULATION_ITERATIONS)]
+        uactive = [res[i][k]["users_active"] for i in range(SIMULATION_ITERATIONS)]
+        uinactive = [res[i][k]["users_inactive"] for i in range(SIMULATION_ITERATIONS)]
+        shares = [res[i][k]["shares"] for i in range(SIMULATION_ITERATIONS)]
+        shareops = [res[i][k]["share_ops"] for i in range(SIMULATION_ITERATIONS)]
+        share_noretr = [res[i][k]["share_noretr"] for i in range(SIMULATION_ITERATIONS)]
+        friends = [res[i][k]["friends"] for i in range(SIMULATION_ITERATIONS)]
+        finactive = [res[i][k]["friends_inactive"] for i in range(SIMULATION_ITERATIONS)]
+        fo.write(str(k) + "," +
+                 str(numpy.average(users)) + "," +
+                 str(numpy.std(users)) + "," +
+                 str(numpy.min(users)) + "," +
+                 str(numpy.max(users)) + "," +
+                 str(numpy.average(uactive)) + "," +
+                 str(numpy.std(uactive)) + "," +
+                 str(numpy.min(uactive)) + "," +
+                 str(numpy.max(uactive)) + "," +
+                 str(numpy.average(uinactive)) + "," +
+                 str(numpy.std(uinactive)) + "," +
+                 str(numpy.min(uinactive)) + "," +
+                 str(numpy.max(uinactive)) + "," +
+                 str(numpy.average(shares)) + "," +
+                 str(numpy.std(shares)) + "," +
+                 str(numpy.min(shares)) + "," +
+                 str(numpy.max(shares)) + "," +
+                 str(numpy.average(shareops)) + "," +
+                 str(numpy.std(shareops)) + "," +
+                 str(numpy.min(shareops)) + "," +
+                 str(numpy.max(shareops)) + "," +
+                 str(numpy.average(share_noretr)) + "," +
+                 str(numpy.std(share_noretr)) + "," +
+                 str(numpy.min(share_noretr)) + "," +
+                 str(numpy.max(share_noretr)) + "," +
+                 str(numpy.average(friends)) + "," +
+                 str(numpy.std(friends)) + "," +
+                 str(numpy.min(friends)) + "," +
+                 str(numpy.max(friends)) + "," +
+                 str(numpy.average(finactive)) + "," +
+                 str(numpy.std(finactive)) + "," +
+                 str(numpy.min(finactive)) + "," +
+                 str(numpy.max(finactive)) + "\n")
