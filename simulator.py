@@ -6,6 +6,8 @@ The simulator aims to model users joining, leaving and using the system.
 import simpy
 import random
 import numpy
+from progressbar import ProgressBar, Percentage, Bar, ETA
+from multiprocessing import Pool
 
 SIMULATION_ROUNDS = 361
 SIMULATION_ITERATIONS = 10
@@ -87,7 +89,7 @@ class User(object):
             self.env.active_users.remove(self)
 
 
-def run(stdout=False):
+def run(iteration, stdout=False):
     """Main simulation control loop."""
     env = simpy.Environment()
     env.active_users = set([User(env) for i in range(INITIAL_USERS)])
@@ -144,8 +146,13 @@ def run(stdout=False):
     return results
 
 res = {}
-for i in range(SIMULATION_ITERATIONS):
-    res[i] = run()
+widgets = [Percentage(), Bar(marker='=', left='[', right=']'),
+           ' ', ETA()]
+pbar = ProgressBar(widgets=widgets)
+pool = Pool(processes=4)
+resiter = pool.imap(run, range(SIMULATION_ITERATIONS))
+for i in pbar(range(SIMULATION_ITERATIONS)):
+    res[i] = resiter.next(timeout=60)
 
 print "iteration round users active inactive shares shareops nodownload friends inacfriends"
 for i in range(SIMULATION_ITERATIONS):
