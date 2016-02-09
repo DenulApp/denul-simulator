@@ -42,6 +42,22 @@ class User(object):
         # Received, but not yet downloaded shares
         self.shares_received = 0
 
+    def friend_threshold(self):
+        """Determine probability of making new friends."""
+        return 0.3
+
+    def retrieve_threshold(self):
+        """Determine probability of retrieving data from server."""
+        return 0.5
+
+    def share_threshold(self):
+        """Determine probability of sharing data."""
+        return 0.1 + (self.env.now - self.last_share) * 0.1
+
+    def quit_threshold(self):
+        """Determine probability of stopping to use the system."""
+        return 0.01
+
     def run(self):
         """Main simulation loop."""
         while self.active:
@@ -53,20 +69,20 @@ class User(object):
 
     def make_friends(self):
         """Make new friends, with a certain probability."""
-        if random.random() < 0.3:
+        if random.random() < self.friend_threshold():
             newfriend = random.sample(self.env.active_users - self.friends, 1)[0]
             self.friends.add(newfriend)
             newfriend.friends.add(self)
 
     def retrieve_data(self):
         """Retrieve incoming shares, with a certain probability."""
-        if random.random() < 0.5:
+        if random.random() < self.retrieve_threshold():
             self.shares_downloaded += self.shares_received
             self.shares_received = 0
 
     def share_data(self):
         """Share data with all friends, with a certain probability."""
-        if random.random() < 0.1 + (self.env.now - self.last_share) * 0.1:
+        if random.random() < self.share_threshold():
             # If data is shared, received shares are also retrieved
             self.shares_downloaded += self.shares_received
             self.shares_received = 0
@@ -82,7 +98,7 @@ class User(object):
 
     def quit_application(self):
         """Quit using the application, with a certain probability."""
-        if random.random() < 0.01:
+        if random.random() < self.quit_threshold():
             self.active = False
             self.left = self.env.now
             self.env.inactive_users.add(self)
