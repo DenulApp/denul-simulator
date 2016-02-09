@@ -7,10 +7,10 @@ import simpy
 import random
 import numpy
 from progressbar import ProgressBar, Percentage, Bar, ETA
-from multiprocessing import Pool
+from multiprocessing import Pool, cpu_count
 
 SIMULATION_ROUNDS = 361
-SIMULATION_ITERATIONS = 10
+SIMULATION_ITERATIONS = 100
 INITIAL_USERS = 100
 
 
@@ -149,7 +149,11 @@ res = {}
 widgets = [Percentage(), Bar(marker='=', left='[', right=']'),
            ' ', ETA()]
 pbar = ProgressBar(widgets=widgets)
-pool = Pool(processes=4)
+try:
+    pool = Pool(processes=cpu_count())
+except NotImplementedError:
+    print "Could not determine CPU count, using 4"
+    pool = Pool(processes=4)
 resiter = pool.imap(run, range(SIMULATION_ITERATIONS))
 for i in pbar(range(SIMULATION_ITERATIONS)):
     res[i] = resiter.next(timeout=60)
