@@ -24,7 +24,7 @@ class User(object):
         # The process that performs the simulation work
         self.action = env.process(self.run())
         # Friends
-        self.friends = set([])
+        self.friends = []
         # Number of pieces of data shared
         self.shares = 0
         # Number of share operations performed
@@ -70,9 +70,11 @@ class User(object):
     def make_friends(self):
         """Make new friends, with a certain probability."""
         if random.random() < self.friend_threshold():
-            newfriend = random.sample(self.env.active_users - self.friends, 1)[0]
-            self.friends.add(newfriend)
-            newfriend.friends.add(self)
+            newfriend = random.sample(self.env.active_users, 1)[0]
+            while newfriend in self.friends:
+                newfriend = random.sample(self.env.active_users, 1)[0]
+            self.friends.append(newfriend)
+            newfriend.friends.append(self)
 
     def retrieve_data(self):
         """Retrieve incoming shares, with a certain probability."""
@@ -101,15 +103,15 @@ class User(object):
         if random.random() < self.quit_threshold():
             self.active = False
             self.left = self.env.now
-            self.env.inactive_users.add(self)
+            self.env.inactive_users.append(self)
             self.env.active_users.remove(self)
 
 
 def run(iteration):
     """Main simulation control loop."""
     env = simpy.Environment()
-    env.active_users = set([User(env) for i in range(INITIAL_USERS)])
-    env.inactive_users = set([])
+    env.active_users = [User(env) for i in range(INITIAL_USERS)]
+    env.inactive_users = []
 
     results = {}
 
@@ -127,12 +129,22 @@ def run(iteration):
                 inac_friends = 0
                 share_ops = 0
                 # Iterate over all users, active and inactive
-                for user in env.active_users | env.inactive_users:
+                for user in env.active_users:
                     shares += user.shares
                     share_ops += user.share_ops
                     friends += len(user.friends)
                     nodownload = nodownload + user.shares - user.shares_downloaded
-                    inac_friends += len(user.friends & env.inactive_users)
+                    for uf in user.friends:
+                        if not uf.active:
+                            inac_friends += 1
+                for user in env.inactive_users:
+                    shares += user.shares
+                    share_ops += user.share_ops
+                    friends += len(user.friends)
+                    nodownload = nodownload + user.shares - user.shares_downloaded
+                    for uf in user.friends:
+                        if not uf.active:
+                            inac_friends += 1
                 # Add result to return value
                 results[env.now + 1] = {
                     "users": active + inactive,
@@ -147,7 +159,7 @@ def run(iteration):
         env.step()
         if last:
             # Add new users to the system
-            env.active_users.update([User(env) for i in range(random.randrange(0, 5, 1))])
+            env.active_users += [User(env) for i in range(random.randrange(0, 5, 1))]
     return results
 
 # Result dictionary
