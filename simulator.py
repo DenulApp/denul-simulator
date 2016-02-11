@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Simulator to simulate the behaviour of users in the system.
 
 The simulator aims to model users joining, leaving and using the system.
@@ -6,12 +7,94 @@ The simulator aims to model users joining, leaving and using the system.
 import simpy
 import random
 import numpy
+import time
 from progressbar import ProgressBar, Percentage, Bar, ETA
 from multiprocessing import Pool, cpu_count
+from collections import Counter
 
 SIMULATION_ROUNDS = 361
-SIMULATION_ITERATIONS = 100
-INITIAL_USERS = 100
+SIMULATION_ITERATIONS = 1
+INITIAL_USERS = 100000
+
+
+def prepare_network(env, n, m, seed=None):
+    """Generate a random graph with the Barabasi-Albert model.
+
+    A graph of ``n`` nodes is grown by attaching new nodes each with ``m``
+    edges that are preferentially attached to existing nodes with high degree.
+
+    Parameters
+    ----------
+    env : Environment
+        SimPy environment to use as a base for the graph
+    n : int
+        Number of nodes
+    m : int
+        Number of edges to attach from a new node to existing nodes
+    seed : int, optional
+        Seed for random number generator (default=None).
+
+    Returns
+    -------
+    env : Environment with Graph set up
+
+    References
+    ----------
+    .. [1] A. L. Barabasi and R. Albert "Emergence of scaling in
+       random networks", Science 286, pp 509-512, 1999.
+
+    Attribution:
+    ------------
+    Code adapted from the NetworkX project, licensed under the BSD license.
+    https://github.com/networkx/networkx/blob/master/networkx/generators/random_graphs.py#L601
+    """
+    if m < 1 or m >= n:
+        raise AssertionError("Barabási–Albert network must have m >= 1"
+                             " and m < n, m = %d, n = %d" % (m, n))
+    if seed is not None:
+        random.seed(seed)
+
+    # Add initial nodes
+    env.active_users = [User(env) for i in range(m)]
+    # Target nodes for new edges
+    targets = env.active_users
+    # List of existing nodes, with nodes repeated once for each adjacent edge
+    env.repeated_nodes = []
+    # Start adding the other n-m nodes. The first node is m.
+    source = m
+    while source < n:
+        # Add edges to m nodes from the source.
+        newuser = User(env)
+        env.active_users.append(newuser)
+        newuser.friends += targets
+        for user in targets:
+            user.friends += [newuser]
+        # Add one node to the list for each new edge just created.
+        env.repeated_nodes.extend(targets)
+        # And the new node "source" has m edges to add to the list.
+        env.repeated_nodes.extend([newuser] * m)
+        # Now choose m unique nodes from the existing nodes
+        # Pick uniformly from repeated_nodes (preferential attachement)
+        targets = _random_subset(env.repeated_nodes, m)
+        source += 1
+    return env
+
+
+def _random_subset(seq, m):
+    """Return m unique elements from seq.
+
+    This differs from random.sample which can return repeated
+    elements if seq holds repeated elements.
+
+    Attribution:
+    Code adapted from the NetworkX project, licensed under the BSD license.
+    https://github.com/networkx/networkx/blob/master/networkx/generators/random_graphs.py#L589
+    """
+    targets = set()
+    while len(targets) < m:
+        x = random.choice(seq)
+        targets.add(x)
+    return targets
 
 
 class User(object):
@@ -61,20 +144,10 @@ class User(object):
     def run(self):
         """Main simulation loop."""
         while self.active:
-            self.make_friends()
             self.retrieve_data()
             self.share_data()
             self.quit_application()
             yield self.env.timeout(1)
-
-    def make_friends(self):
-        """Make new friends, with a certain probability."""
-        if random.random() < self.friend_threshold():
-            newfriend = random.sample(self.env.active_users, 1)[0]
-            while newfriend in self.friends:
-                newfriend = random.sample(self.env.active_users, 1)[0]
-            self.friends.append(newfriend)
-            newfriend.friends.append(self)
 
     def retrieve_data(self):
         """Retrieve incoming shares, with a certain probability."""
@@ -105,13 +178,17 @@ class User(object):
             self.left = self.env.now
             self.env.inactive_users.append(self)
             self.env.active_users.remove(self)
+            self.env.repeated_nodes[:] = [x for x in self.env.repeated_nodes if x != self]
 
 
 def run(iteration):
     """Main simulation control loop."""
     env = simpy.Environment()
-    env.active_users = [User(env) for i in range(INITIAL_USERS)]
+    env = prepare_network(env, INITIAL_USERS, 1)
     env.inactive_users = []
+
+    millis_pres = int(round(time.time() * 1000))
+    millis_poss = 0
 
     results = {}
 
@@ -159,7 +236,23 @@ def run(iteration):
         env.step()
         if last:
             # Add new users to the system
-            env.active_users += [User(env) for i in range(random.randrange(0, 5, 1))]
+            # env.active_users += [User(env) for i in range(random.randrange(0, 5, 1))]
+            millis_poss = int(round(time.time() * 1000))
+            print "step:", millis_poss - millis_pres, (millis_poss - float(millis_pres)) / len(env.active_users), "per user"
+            millis_pre = int(round(time.time() * 1000))
+            for i in range(random.randrange(100, 500, 1)):
+                newuser = User(env)
+                env.active_users.append(newuser)
+                role_model = _random_subset(env.active_users, 1).pop()
+                # print len(role_model.friends), len(env.repeated_nodes), len(env.active_users)
+                newfriends = _random_subset(env.repeated_nodes, len(role_model.friends))
+                newuser.friends += newfriends
+                for friend in newfriends:
+                    friend.friends.append(newuser)
+                env.repeated_nodes.extend([newuser] * len(role_model.friends))
+            millis_post = int(round(time.time() * 1000))
+            print "add: ", millis_post - millis_pre
+            millis_pres = int(round(time.time() * 1000))
     return results
 
 # Result dictionary
@@ -171,17 +264,18 @@ widgets = [Percentage(), Bar(marker='=', left='[', right=']'),
 pbar = ProgressBar(widgets=widgets)
 
 # Prepare multiprocessing Pool
-try:
-    pool = Pool(processes=cpu_count())
-except NotImplementedError:
-    print "Could not determine CPU count, using 4"
-    pool = Pool(processes=4)
+# try:
+#     pool = Pool(processes=cpu_count())
+# except NotImplementedError:
+#     print "Could not determine CPU count, using 4"
+#     pool = Pool(processes=4)
 
 # Multiprocess simulation
-resiter = pool.imap(run, range(SIMULATION_ITERATIONS))
+# resiter = pool.imap(run, range(SIMULATION_ITERATIONS))
 # Retrieve and save results
 for i in pbar(range(SIMULATION_ITERATIONS)):
-    res[i] = resiter.next()
+    # res[i] = resiter.next()
+    res[i] = run(i)
 
 # Print raw output data, as space-separated values
 with open('rounds.csv', 'w') as fo:
