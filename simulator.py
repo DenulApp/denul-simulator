@@ -8,11 +8,13 @@ import simpy
 import random
 import numpy
 import time
+import cProfile
 from progressbar import ProgressBar, Percentage, Bar, ETA
 from multiprocessing import Pool, cpu_count
 from collections import Counter
+import os
 
-SIMULATION_ROUNDS = 361
+SIMULATION_ROUNDS = 10
 SIMULATION_ITERATIONS = 1
 INITIAL_USERS = 100000
 
@@ -93,7 +95,8 @@ def _random_subset(seq, m):
     targets = set()
     while len(targets) < m:
         x = random.choice(seq)
-        targets.add(x)
+        if x.active:
+            targets.add(x)
     return targets
 
 
@@ -139,6 +142,7 @@ class User(object):
 
     def quit_threshold(self):
         """Determine probability of stopping to use the system."""
+        # return pow(0.1, len(self.friends))
         return 0.01
 
     def run(self):
@@ -178,7 +182,77 @@ class User(object):
             self.left = self.env.now
             self.env.inactive_users.append(self)
             self.env.active_users.remove(self)
-            self.env.repeated_nodes[:] = [x for x in self.env.repeated_nodes if x != self]
+            # self.env.repeated_nodes[:] = [x for x in self.env.repeated_nodes if x != self]
+
+
+def print_dist(env):
+    """Print the current node degree distribution."""
+    os.system('clear')
+    c = Counter([len(x.friends) for x in env.active_users] + [len(x.friends) for x in env.inactive_users])
+    k = 0
+    for i in c.keys():
+        k = max(k, c[i])
+    for i in sorted(c.keys()):
+        if (i > 40):
+            break
+        print i, c[i], "\t", "=" * int((c[i] / float(k)) * 70)
+
+
+def add_users(env):
+    """Add new users to the system."""
+    # Add new users to the system
+    # env.active_users += [User(env) for i in range(random.randrange(0, 5, 1))]
+    # print "step", env.now - 1, millis_poss - millis_pres, (millis_poss - float(millis_pres)) / len(env.active_users), "per user,", len(env. active_users), "users"
+    for i in range(random.randrange(int(INITIAL_USERS * 0.01), int(INITIAL_USERS * 0.05), 1)):
+        newuser = User(env)
+        role_model = _random_subset(env.active_users, 1).pop()
+        # print len(role_model.friends), len(env.repeated_nodes), len(env.active_users)
+        newfriends = _random_subset(env.repeated_nodes, len(role_model.friends))
+        newuser.friends += newfriends
+        for friend in newfriends:
+            friend.friends.append(newuser)
+        env.repeated_nodes.extend([newuser] * len(role_model.friends))
+        env.repeated_nodes.extend(newfriends)
+        env.active_users.append(newuser)
+
+
+def save_stats(env):
+    """Determine stats and save them to a dictionary."""
+    active = len(env.active_users)
+    inactive = len(env.inactive_users)
+    shares = 0
+    friends = 0
+    nodownload = 0
+    inac_friends = 0
+    share_ops = 0
+    # Iterate over all users, active and inactive
+    for user in env.active_users:
+        shares += user.shares
+        share_ops += user.share_ops
+        friends += len(user.friends)
+        nodownload = nodownload + user.shares - user.shares_downloaded
+        for uf in user.friends:
+            if not uf.active:
+                inac_friends += 1
+    for user in env.inactive_users:
+        shares += user.shares
+        share_ops += user.share_ops
+        friends += len(user.friends)
+        nodownload = nodownload + user.shares - user.shares_downloaded
+        for uf in user.friends:
+            if not uf.active:
+                inac_friends += 1
+    # Add result to return value
+    return {
+        "users": active + inactive,
+        "users_active": active,
+        "users_inactive": inactive,
+        "shares": shares,
+        "share_ops": share_ops,
+        "share_noretr": nodownload,
+        "friends": friends,
+        "friends_inactive": inac_friends
+    }
 
 
 def run(iteration):
@@ -187,72 +261,19 @@ def run(iteration):
     env = prepare_network(env, INITIAL_USERS, 1)
     env.inactive_users = []
 
-    millis_pres = int(round(time.time() * 1000))
-    millis_poss = 0
-
     results = {}
 
     while env.peek() < SIMULATION_ROUNDS:
         last = env.now != env.peek()
         if last:
             # The next step will be the first in the next simulation timestep
+            # print_dist(env)
             if env.peek() % 10 == 0:
                 # Ten steps have passed, gather statistics
-                active = len(env.active_users)
-                inactive = len(env.inactive_users)
-                shares = 0
-                friends = 0
-                nodownload = 0
-                inac_friends = 0
-                share_ops = 0
-                # Iterate over all users, active and inactive
-                for user in env.active_users:
-                    shares += user.shares
-                    share_ops += user.share_ops
-                    friends += len(user.friends)
-                    nodownload = nodownload + user.shares - user.shares_downloaded
-                    for uf in user.friends:
-                        if not uf.active:
-                            inac_friends += 1
-                for user in env.inactive_users:
-                    shares += user.shares
-                    share_ops += user.share_ops
-                    friends += len(user.friends)
-                    nodownload = nodownload + user.shares - user.shares_downloaded
-                    for uf in user.friends:
-                        if not uf.active:
-                            inac_friends += 1
-                # Add result to return value
-                results[env.now + 1] = {
-                    "users": active + inactive,
-                    "users_active": active,
-                    "users_inactive": inactive,
-                    "shares": shares,
-                    "share_ops": share_ops,
-                    "share_noretr": nodownload,
-                    "friends": friends,
-                    "friends_inactive": inac_friends
-                }
+                results[env.now + 1] = save_stats(env)
         env.step()
         if last:
-            # Add new users to the system
-            # env.active_users += [User(env) for i in range(random.randrange(0, 5, 1))]
-            millis_poss = int(round(time.time() * 1000))
-            print "step:", millis_poss - millis_pres, (millis_poss - float(millis_pres)) / len(env.active_users), "per user"
-            millis_pre = int(round(time.time() * 1000))
-            for i in range(random.randrange(100, 500, 1)):
-                newuser = User(env)
-                env.active_users.append(newuser)
-                role_model = _random_subset(env.active_users, 1).pop()
-                # print len(role_model.friends), len(env.repeated_nodes), len(env.active_users)
-                newfriends = _random_subset(env.repeated_nodes, len(role_model.friends))
-                newuser.friends += newfriends
-                for friend in newfriends:
-                    friend.friends.append(newuser)
-                env.repeated_nodes.extend([newuser] * len(role_model.friends))
-            millis_post = int(round(time.time() * 1000))
-            print "add: ", millis_post - millis_pre
-            millis_pres = int(round(time.time() * 1000))
+            add_users(env)
     return results
 
 # Result dictionary
