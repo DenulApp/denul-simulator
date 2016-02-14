@@ -8,13 +8,12 @@ import simpy
 import random
 import numpy
 import time
-import cProfile
 from progressbar import ProgressBar, Percentage, Bar, ETA
 from multiprocessing import Pool, cpu_count
 from collections import Counter
 import os
 
-SIMULATION_ROUNDS = 10
+SIMULATION_ROUNDS = 200
 SIMULATION_ITERATIONS = 1
 INITIAL_USERS = 100000
 
@@ -263,6 +262,8 @@ def run(iteration):
 
     results = {}
 
+    time_pre = int(round(time.time() * 1000))
+
     while env.peek() < SIMULATION_ROUNDS:
         last = env.now != env.peek()
         if last:
@@ -271,9 +272,13 @@ def run(iteration):
             if env.peek() % 10 == 0:
                 # Ten steps have passed, gather statistics
                 results[env.now + 1] = save_stats(env)
+                # Clean up the list of repeated nodes
+                env.repeated_nodes[:] = [x for x in env.repeated_nodes if x.active]
         env.step()
         if last:
             add_users(env)
+            print env.now, int(round(time.time() * 1000)) - time_pre, len(env.active_users)
+            time_pre = int(round(time.time() * 1000))
     return results
 
 # Result dictionary
