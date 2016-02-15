@@ -12,10 +12,10 @@ from multiprocessing import Pool, cpu_count
 from collections import Counter
 import os
 
-SIMULATION_ROUNDS = 200
+SIMULATION_ROUNDS = 201
 SIMULATION_ITERATIONS = 4
 ITERATION_OFFSET = 1
-INITIAL_USERS = 10000
+INITIAL_USERS = 100000
 
 
 def prepare_network(env, n, m, seed=None):
@@ -242,7 +242,7 @@ def save_stats(env):
             if not uf.active:
                 inac_friends += 1
     # Length distribution
-    ctr = Counter([len(x.friends) for x in env.active_users] + [len(x.friends) for x in env.inactive_users])
+    ctr = Counter([len(x.friends) for x in env.active_users])
     # Add result to return value
     return {
         "users": active + inactive,
@@ -292,7 +292,7 @@ pbar = ProgressBar(widgets=widgets)
 
 # Prepare multiprocessing Pool
 try:
-    pool = Pool(processes=cpu_count())
+    pool = Pool(processes=min(cpu_count(), SIMULATION_ITERATIONS))
 except NotImplementedError:
     print "Could not determine CPU count, using 4"
     pool = Pool(processes=4)
