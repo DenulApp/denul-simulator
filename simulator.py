@@ -295,14 +295,15 @@ pbar = ProgressBar(widgets=widgets)
 
 # Prepare multiprocessing Pool
 try:
-    pool = Pool(processes=min(cpu_count(), SIMULATION_ITERATIONS))
+    pool = Pool(processes=min(cpu_count(), SIMULATION_ITERATIONS), maxtasksperchild=1)
 except NotImplementedError:
     print "Could not determine CPU count, using 4"
-    pool = Pool(processes=4)
+    pool = Pool(processes=4, maxtasksperchild=1)
 
 # Multiprocess simulation
 resiter = pool.imap(run, range(SIMULATION_ITERATIONS))
 # Retrieve and save results
+# TODO Change mode to append, add headers in-between to state which parameters were used to distinguish between runs
 with open('rounds.csv', 'w') as rounds, open('dist.csv', 'w') as dist:
     rounds.write("iteration round users active inactive shares shareops nodownload neverdownload friends inacfriends\n")
     dist.write("iteration round degree count\n")
