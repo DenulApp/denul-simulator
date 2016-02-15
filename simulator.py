@@ -6,7 +6,6 @@ The simulator aims to model users joining, leaving and using the system.
 
 import simpy
 import random
-import time
 from progressbar import ProgressBar, Percentage, Bar, ETA
 from multiprocessing import Pool, cpu_count
 from collections import Counter
@@ -224,10 +223,12 @@ def save_stats(env):
     nodownload = 0
     inac_friends = 0
     share_ops = 0
+    neverdownload = 0
     # Iterate over all users, active and inactive
     for user in env.active_users:
         shares += user.shares
         share_ops += user.share_ops
+        neverdownload += user.share_ops
         friends += len(user.friends)
         nodownload = nodownload + user.shares - user.shares_downloaded
         for uf in user.friends:
@@ -238,6 +239,7 @@ def save_stats(env):
         share_ops += user.share_ops
         friends += len(user.friends)
         nodownload = nodownload + user.shares - user.shares_downloaded
+        neverdownload += user.shares_received
         for uf in user.friends:
             if not uf.active:
                 inac_friends += 1
@@ -251,6 +253,7 @@ def save_stats(env):
         "shares": shares,
         "share_ops": share_ops,
         "share_noretr": nodownload,
+        "share_neverretr": neverdownload,
         "friends": friends,
         "friends_inactive": inac_friends,
         "friend_distribution": ctr
@@ -301,7 +304,7 @@ except NotImplementedError:
 resiter = pool.imap(run, range(SIMULATION_ITERATIONS))
 # Retrieve and save results
 with open('rounds.csv', 'w') as rounds, open('dist.csv', 'w') as dist:
-    rounds.write("iteration round users active inactive shares shareops nodownload friends inacfriends\n")
+    rounds.write("iteration round users active inactive shares shareops nodownload neverdownload friends inacfriends\n")
     dist.write("iteration round degree count\n")
     for i in pbar(range(SIMULATION_ITERATIONS)):
         res = resiter.next()
@@ -314,6 +317,7 @@ with open('rounds.csv', 'w') as rounds, open('dist.csv', 'w') as dist:
                          str(res[k]["shares"]) + " " +
                          str(res[k]["share_ops"]) + " " +
                          str(res[k]["share_noretr"]) + " " +
+                         str(res[k]["share_neverretr"]) + " " +
                          str(res[k]["friends"]) + " " +
                          str(res[k]["friends_inactive"]) + "\n")
             for degree in sorted(res[k]["friend_distribution"].keys()):
