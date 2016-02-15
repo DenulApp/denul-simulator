@@ -6,7 +6,6 @@ The simulator aims to model users joining, leaving and using the system.
 
 import simpy
 import random
-import numpy
 import time
 from progressbar import ProgressBar, Percentage, Bar, ETA
 from multiprocessing import Pool, cpu_count
@@ -14,8 +13,9 @@ from collections import Counter
 import os
 
 SIMULATION_ROUNDS = 200
-SIMULATION_ITERATIONS = 1
-INITIAL_USERS = 100000
+SIMULATION_ITERATIONS = 4
+ITERATION_OFFSET = 1
+INITIAL_USERS = 10000
 
 
 def prepare_network(env, n, m, seed=None):
@@ -50,7 +50,7 @@ def prepare_network(env, n, m, seed=None):
     https://github.com/networkx/networkx/blob/master/networkx/generators/random_graphs.py#L601
     """
     if m < 1 or m >= n:
-        raise AssertionError("Barabási–Albert network must have m >= 1"
+        raise AssertionError("Barabási-Albert network must have m >= 1"
                              " and m < n, m = %d, n = %d" % (m, n))
     if seed is not None:
         random.seed(seed)
@@ -241,6 +241,8 @@ def save_stats(env):
         for uf in user.friends:
             if not uf.active:
                 inac_friends += 1
+    # Length distribution
+    ctr = Counter([len(x.friends) for x in env.active_users] + [len(x.friends) for x in env.inactive_users])
     # Add result to return value
     return {
         "users": active + inactive,
@@ -250,7 +252,8 @@ def save_stats(env):
         "share_ops": share_ops,
         "share_noretr": nodownload,
         "friends": friends,
-        "friends_inactive": inac_friends
+        "friends_inactive": inac_friends,
+        "friend_distribution": ctr
     }
 
 
@@ -262,7 +265,8 @@ def run(iteration):
 
     results = {}
 
-    time_pre = int(round(time.time() * 1000))
+    # time_pre = int(round(time.time() * 1000))
+    results[0] = save_stats(env)
 
     while env.peek() < SIMULATION_ROUNDS:
         last = env.now != env.peek()
@@ -277,12 +281,9 @@ def run(iteration):
         env.step()
         if last:
             add_users(env)
-            print env.now, int(round(time.time() * 1000)) - time_pre, len(env.active_users)
-            time_pre = int(round(time.time() * 1000))
+            # print env.now, int(round(time.time() * 1000)) - time_pre, len(env.active_users)
+            # time_pre = int(round(time.time() * 1000))
     return results
-
-# Result dictionary
-res = {}
 
 # Prepare ProgressBar
 widgets = [Percentage(), Bar(marker='=', left='[', right=']'),
@@ -290,92 +291,98 @@ widgets = [Percentage(), Bar(marker='=', left='[', right=']'),
 pbar = ProgressBar(widgets=widgets)
 
 # Prepare multiprocessing Pool
-# try:
-#     pool = Pool(processes=cpu_count())
-# except NotImplementedError:
-#     print "Could not determine CPU count, using 4"
-#     pool = Pool(processes=4)
+try:
+    pool = Pool(processes=cpu_count())
+except NotImplementedError:
+    print "Could not determine CPU count, using 4"
+    pool = Pool(processes=4)
 
 # Multiprocess simulation
-# resiter = pool.imap(run, range(SIMULATION_ITERATIONS))
+resiter = pool.imap(run, range(SIMULATION_ITERATIONS))
 # Retrieve and save results
-for i in pbar(range(SIMULATION_ITERATIONS)):
-    # res[i] = resiter.next()
-    res[i] = run(i)
+with open('rounds.csv', 'w') as rounds, open('dist.csv', 'w') as dist:
+    rounds.write("iteration round users active inactive shares shareops nodownload friends inacfriends\n")
+    dist.write("iteration round degree count\n")
+    for i in pbar(range(SIMULATION_ITERATIONS)):
+        res = resiter.next()
+        # res = run(i)
+        for k in sorted(res.keys()):
+            rounds.write(str(i + ITERATION_OFFSET) + " " + str(k) + " " +
+                         str(res[k]["users"]) + " " +
+                         str(res[k]["users_active"]) + " " +
+                         str(res[k]["users_inactive"]) + " " +
+                         str(res[k]["shares"]) + " " +
+                         str(res[k]["share_ops"]) + " " +
+                         str(res[k]["share_noretr"]) + " " +
+                         str(res[k]["friends"]) + " " +
+                         str(res[k]["friends_inactive"]) + "\n")
+            for degree in sorted(res[k]["friend_distribution"].keys()):
+                dist.write(str(i + ITERATION_OFFSET) + " " + str(k) + " " +
+                           str(degree) + " " +
+                           str(res[k]["friend_distribution"][degree]) + "\n")
+        rounds.flush()
+        dist.flush()
 
-# Print raw output data, as space-separated values
-with open('rounds.csv', 'w') as fo:
-    fo.write("iteration round users active inactive shares shareops nodownload friends inacfriends\n")
-    for i in range(SIMULATION_ITERATIONS):
-        for k in sorted(res[i].keys()):
-            fo.write(str(i) + " " + str(k) + " " +
-                     str(res[i][k]["users"]) + " " +
-                     str(res[i][k]["users_active"]) + " " +
-                     str(res[i][k]["users_inactive"]) + " " +
-                     str(res[i][k]["shares"]) + " " +
-                     str(res[i][k]["share_ops"]) + " " +
-                     str(res[i][k]["share_noretr"]) + " " +
-                     str(res[i][k]["friends"]) + " " +
-                     str(res[i][k]["friends_inactive"]) + "\n")
 
 # Print aggregated statistics
-with open('results.csv', 'w') as fo:
-    fo.write("round user_median user_1q user_3q user_min user_max " +
-             "active_user_median active_user_1q active_user_3q active_user_min active_user_max " +
-             "inactive_user_median inactive_user_1q inactive_user_3q inactive_user_min inactive_user_max " +
-             "share_median shares_1q shares_3q shares_min shares_max " +
-             "shareops_median shareops_1q shareops_3q shareops_min shareops_max " +
-             "sharenoretr_median sharenoretr_1q sharenoretr_3q sharenoretr_min sharenoretr_max " +
-             "friends_median friends_1q friends_3q friends_min friends_max " +
-             "finactive_median finactive_1q finactive_3q finactive_min finactive_max\n")
-
-    for k in sorted(res[0].keys()):
-        users = [res[i][k]["users"] for i in range(SIMULATION_ITERATIONS)]
-        uactive = [res[i][k]["users_active"] for i in range(SIMULATION_ITERATIONS)]
-        uinactive = [res[i][k]["users_inactive"] for i in range(SIMULATION_ITERATIONS)]
-        shares = [res[i][k]["shares"] for i in range(SIMULATION_ITERATIONS)]
-        shareops = [res[i][k]["share_ops"] for i in range(SIMULATION_ITERATIONS)]
-        share_noretr = [res[i][k]["share_noretr"] for i in range(SIMULATION_ITERATIONS)]
-        friends = [res[i][k]["friends"] for i in range(SIMULATION_ITERATIONS)]
-        finactive = [res[i][k]["friends_inactive"] for i in range(SIMULATION_ITERATIONS)]
-        fo.write(str(k) + " " +
-                 str(numpy.percentile(users, 50)) + " " +
-                 str(numpy.percentile(users, 25)) + " " +
-                 str(numpy.percentile(users, 75)) + " " +
-                 str(numpy.min(users)) + " " +
-                 str(numpy.max(users)) + " " +
-                 str(numpy.percentile(uactive, 50)) + " " +
-                 str(numpy.percentile(uactive, 25)) + " " +
-                 str(numpy.percentile(uactive, 75)) + " " +
-                 str(numpy.min(uactive)) + " " +
-                 str(numpy.max(uactive)) + " " +
-                 str(numpy.percentile(uinactive, 50)) + " " +
-                 str(numpy.percentile(uinactive, 25)) + " " +
-                 str(numpy.percentile(uinactive, 75)) + " " +
-                 str(numpy.min(uinactive)) + " " +
-                 str(numpy.max(uinactive)) + " " +
-                 str(numpy.percentile(shares, 50)) + " " +
-                 str(numpy.percentile(shares, 25)) + " " +
-                 str(numpy.percentile(shares, 75)) + " " +
-                 str(numpy.min(shares)) + " " +
-                 str(numpy.max(shares)) + " " +
-                 str(numpy.percentile(shareops, 50)) + " " +
-                 str(numpy.percentile(shareops, 25)) + " " +
-                 str(numpy.percentile(shareops, 75)) + " " +
-                 str(numpy.min(shareops)) + " " +
-                 str(numpy.max(shareops)) + " " +
-                 str(numpy.percentile(share_noretr, 50)) + " " +
-                 str(numpy.percentile(share_noretr, 25)) + " " +
-                 str(numpy.percentile(share_noretr, 75)) + " " +
-                 str(numpy.min(share_noretr)) + " " +
-                 str(numpy.max(share_noretr)) + " " +
-                 str(numpy.percentile(friends, 50)) + " " +
-                 str(numpy.percentile(friends, 25)) + " " +
-                 str(numpy.percentile(friends, 75)) + " " +
-                 str(numpy.min(friends)) + " " +
-                 str(numpy.max(friends)) + " " +
-                 str(numpy.percentile(finactive, 50)) + " " +
-                 str(numpy.percentile(finactive, 25)) + " " +
-                 str(numpy.percentile(finactive, 75)) + " " +
-                 str(numpy.min(finactive)) + " " +
-                 str(numpy.max(finactive)) + "\n")
+# TODO Commented out due to pypy / numpy incompatibilities
+# with open('results.csv', 'w') as fo:
+#     fo.write("round user_median user_1q user_3q user_min user_max " +
+#              "active_user_median active_user_1q active_user_3q active_user_min active_user_max " +
+#              "inactive_user_median inactive_user_1q inactive_user_3q inactive_user_min inactive_user_max " +
+#              "share_median shares_1q shares_3q shares_min shares_max " +
+#              "shareops_median shareops_1q shareops_3q shareops_min shareops_max " +
+#              "sharenoretr_median sharenoretr_1q sharenoretr_3q sharenoretr_min sharenoretr_max " +
+#              "friends_median friends_1q friends_3q friends_min friends_max " +
+#              "finactive_median finactive_1q finactive_3q finactive_min finactive_max\n")
+#
+#     for k in sorted(res[0].keys()):
+#         users = [res[i][k]["users"] for i in range(SIMULATION_ITERATIONS)]
+#         uactive = [res[i][k]["users_active"] for i in range(SIMULATION_ITERATIONS)]
+#         uinactive = [res[i][k]["users_inactive"] for i in range(SIMULATION_ITERATIONS)]
+#         shares = [res[i][k]["shares"] for i in range(SIMULATION_ITERATIONS)]
+#         shareops = [res[i][k]["share_ops"] for i in range(SIMULATION_ITERATIONS)]
+#         share_noretr = [res[i][k]["share_noretr"] for i in range(SIMULATION_ITERATIONS)]
+#         friends = [res[i][k]["friends"] for i in range(SIMULATION_ITERATIONS)]
+#         finactive = [res[i][k]["friends_inactive"] for i in range(SIMULATION_ITERATIONS)]
+#         fo.write(str(k) + " " +
+#                  str(numpy.percentile(users, 50)) + " " +
+#                  str(numpy.percentile(users, 25)) + " " +
+#                  str(numpy.percentile(users, 75)) + " " +
+#                  str(numpy.min(users)) + " " +
+#                  str(numpy.max(users)) + " " +
+#                  str(numpy.percentile(uactive, 50)) + " " +
+#                  str(numpy.percentile(uactive, 25)) + " " +
+#                  str(numpy.percentile(uactive, 75)) + " " +
+#                  str(numpy.min(uactive)) + " " +
+#                  str(numpy.max(uactive)) + " " +
+#                  str(numpy.percentile(uinactive, 50)) + " " +
+#                  str(numpy.percentile(uinactive, 25)) + " " +
+#                  str(numpy.percentile(uinactive, 75)) + " " +
+#                  str(numpy.min(uinactive)) + " " +
+#                  str(numpy.max(uinactive)) + " " +
+#                  str(numpy.percentile(shares, 50)) + " " +
+#                  str(numpy.percentile(shares, 25)) + " " +
+#                  str(numpy.percentile(shares, 75)) + " " +
+#                  str(numpy.min(shares)) + " " +
+#                  str(numpy.max(shares)) + " " +
+#                  str(numpy.percentile(shareops, 50)) + " " +
+#                  str(numpy.percentile(shareops, 25)) + " " +
+#                  str(numpy.percentile(shareops, 75)) + " " +
+#                  str(numpy.min(shareops)) + " " +
+#                  str(numpy.max(shareops)) + " " +
+#                  str(numpy.percentile(share_noretr, 50)) + " " +
+#                  str(numpy.percentile(share_noretr, 25)) + " " +
+#                  str(numpy.percentile(share_noretr, 75)) + " " +
+#                  str(numpy.min(share_noretr)) + " " +
+#                  str(numpy.max(share_noretr)) + " " +
+#                  str(numpy.percentile(friends, 50)) + " " +
+#                  str(numpy.percentile(friends, 25)) + " " +
+#                  str(numpy.percentile(friends, 75)) + " " +
+#                  str(numpy.min(friends)) + " " +
+#                  str(numpy.max(friends)) + " " +
+#                  str(numpy.percentile(finactive, 50)) + " " +
+#                  str(numpy.percentile(finactive, 25)) + " " +
+#                  str(numpy.percentile(finactive, 75)) + " " +
+#                  str(numpy.min(finactive)) + " " +
+#                  str(numpy.max(finactive)) + "\n")
