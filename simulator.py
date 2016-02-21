@@ -12,8 +12,8 @@ from collections import Counter
 import os
 
 SIMULATION_ROUNDS = 201
-SIMULATION_ITERATIONS = 4
-ITERATION_OFFSET = 1
+SIMULATION_ITERATIONS = 32
+ITERATION_OFFSET = 395
 INITIAL_USERS = 100000
 
 
@@ -186,7 +186,7 @@ class User(object):
 def print_dist(env):
     """Print the current node degree distribution."""
     os.system('clear')
-    c = Counter([len(x.friends) for x in env.active_users] + [len(x.friends) for x in env.inactive_users])
+    c = Counter([len(x.friends) for x in env.active_users])
     k = 0
     for i in c.keys():
         k = max(k, c[i])
