@@ -239,7 +239,7 @@ def save_stats(env):
         share_ops += user.share_ops
         friends += len(user.friends)
         nodownload = nodownload + user.shares - user.shares_downloaded
-        neverdownload += user.shares_received
+        neverdownload += user.shares_received + user.share_ops
         for uf in user.friends:
             if not uf.active:
                 inac_friends += 1
